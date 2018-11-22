@@ -239,7 +239,7 @@ start:
 
     pop cx
     ret
-	cls endp
+  cls endp
 
   HEX2ASCII PROC NEAR
     ; Converts a word variable to ASCII
