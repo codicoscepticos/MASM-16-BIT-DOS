@@ -228,17 +228,17 @@ start:
 
   ; Subroutines
   cls proc near
-		push cx
-		mov di, 0
+    push cx
+    mov di, 0
 
-		mov al, ' '
-		mov ah, cls_color
+    mov al, ' '
+    mov ah, cls_color
 
-		mov cx, scrw
-		rep stosw ; es:di <- ax, di <- di+2
+    mov cx, scrw
+    rep stosw ; es:di <- ax, di <- di+2
 
-		pop cx
-		ret
+    pop cx
+    ret
 	cls endp
 
   HEX2ASCII PROC NEAR
