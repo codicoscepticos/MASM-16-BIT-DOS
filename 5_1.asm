@@ -5,8 +5,8 @@ disp MACRO x
   push ax
   push dx
 
-  mov ah, 09h
-  mov dx, offset x
+  mov ah, 09h ; display a character string (must end with an ASCII $ (24H))
+  mov dx, offset x ; offset of x from segment (where data is located), dx refers to the address of the character string
   int 21h
 
   pop dx
