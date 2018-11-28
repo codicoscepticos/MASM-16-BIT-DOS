@@ -1,16 +1,149 @@
 .486
 assume cs:code, ds:data, ss:stack
 
-disp MACRO x
+print_char MACRO char
   push ax
   push dx
 
   mov ah, 09h ; display a character string (must end with an ASCII $ (24H))
-  mov dx, offset x ; offset of x from segment (where data is located), dx refers to the address of the character string
+  mov dx, offset char ; offset of char from segment (where data is located), dx refers to the address of the character string
   int 21h
 
   pop dx
   pop ax
+ENDM
+
+print_text MACRO text, pos
+  LOCAL l_pt
+  push si
+  push di
+
+  lea si, text
+  mov di, pos
+  l_pt:
+    movsb ; move string byte/data, es:di <- ds:si, di <- di+1, si <- si+1
+    inc di
+    cmp byte ptr[si], eom
+  jne l_pt
+
+  pop di
+  pop si
+ENDM
+
+ph2a MACRO hex, dnum
+  LOCAL haha
+  LOCAL mulbx10
+  LOCAL ploop
+  push bx
+
+  mov ax, hex
+  mov dx, 0
+
+  mov cx, dnum
+  dec cx
+  mov bx, 1
+  mulbx10:
+    imul bx, 10
+  loop mulbx10
+  mov cx, bx
+
+  ploop:
+    div cx ; dx-ax / cx => dx = remainder, ax = quotient
+
+    push ax
+    push ax
+    call hex2ascii
+    pop ax
+
+    print_char buffer[3]
+
+    xchg dx, ax
+
+    ; check condition:
+    cmp cx, 1
+    je haha
+
+    ; divide cx by 10:
+    push ax
+    push dx
+    mov dx, 0
+    mov ax, cx
+    mov cx, 10
+    div cx
+    mov cx, ax
+    pop dx
+    pop ax
+    ; ----
+  jmp ploop
+  
+  haha:
+  pop bx
+ENDM
+
+printHex2Ascii MACRO hex
+  mov ax, hex
+  mov dx, 0
+  mov cx, 1000d
+  div cx ; dx-ax / cx => dx = remainder, ax = quotient
+
+  ; ----
+  push ax
+  push ax ; ax is pushed twice, because the called subroutine below, when it returns
+          ; discards what was just pushed onto the stack before it was called
+  call hex2ascii  ; 'call' first pushes the current address onto the stack, then does
+                  ; an unconditional jump to the specified label (i.e. the name of the subroutine)
+  pop ax
+
+  print_char buffer[3]  ; display the thousands
+
+  xchg dx, ax
+  ; ----
+
+  mov cl, 100d
+  div cl ; ax / 100 => ah = remainder, al = quotient
+
+  mov dx, 0
+  mov dl, al
+
+  ; ----
+  push ax
+  push ax
+  call hex2ascii
+  pop ax
+
+  print_char buffer[3]  ; display the hundreds
+
+  xchg al, ah
+  ; ----
+
+  mov ah, 0
+  mov cl, 10d
+  div cl ; ax / 100 => ah = remainder, al = quotient
+
+  mov dx, 0
+  mov dl, al
+
+  ; ----
+  push ax
+  push ax
+  call hex2ascii
+  pop ax
+
+  print_char buffer[3]  ; display the tens
+
+  xchg al, ah
+  ; ----
+
+  mov ah, 0
+
+  ; ----
+  push ax
+  push ax
+  call hex2ascii
+  pop ax
+
+  print_char buffer[3]  ; display the units
+  ; ---- ----
 ENDM
 
 ; Constants
@@ -21,6 +154,8 @@ cls_color equ 7
 dollar equ '$'
 eom equ 0
 
+dnum equ 4
+
 ; Segments
 stack segment use16 para stack
   db 256 dup(' ')
@@ -28,23 +163,31 @@ stack ends
 
 data segment use16
   buffer db 4 dup(0)
-  db dollar
+  db dollar ; a byte declared without a label, containing the value of dollar, its location is buffer + 4
+            ; same thing with the other 'db dollar' declarations
   new_line db 10, 13, 13
-  db dollar
+  db dollar ; its location is new_line + 3
   space db ' '
-  db dollar
+  db dollar ; its location is space + 1
 
   line_1 dw 0d
   line_2 dw 160d
   line_3 dw 320d
-  line_24 dw 3680d
-  line_25 dw 3840d
+  line_24 dw 3680d  ; one line above from the last line on screen
+  line_25 dw 3840d  ; last line on screen
 
   msg db 'Doste ta stoixeia tou 3*3 pinaka:'
   db eom
-  msg0 db '0) Gia exodo apo to programma.'
+  msg0 db '(0) Gia exodo apo to programma.'
   db eom
-  msg1 db '1) Gia na dosete kainourgia stoixeia ston pinaka.'
+  msg1 db '(1) Gia na dosete kainourgia stoixeia ston pinaka.'
+  db eom
+  msg2 db '(2) Gia thn emfanish tou athroismatos twn stoixeiwn.'
+  db eom
+
+  msg_sum db 'Athroisma twn arithmwn:'
+  db eom
+  msg_gotoMenu db 'Press any key to continue...'
   db eom
 
   buf1 db 257 dup(?)
@@ -71,16 +214,7 @@ start:
 
     read_nums_loop:
     call cls
-
-    push di
-    lea si, msg
-    mov di, line_24
-    print_prompt:
-      movsb
-      inc di
-      cmp byte ptr[si], eom
-    jne print_prompt
-    pop di
+    print_text msg, line_24 ; 'Doste ta stoixeia tou 3*3 pinaka:'
 
     mov cx, 10  ; multiplication factor; later, by multiplying ax each time, the whole number
                 ; (temporarily referred by ax) is factored from units to thousands
@@ -96,6 +230,7 @@ start:
       cmp al, '9'
       ja store_read_num
       ; if ENTER is pressed, which is equal to 0Dh, it will jump, too
+      ; these two jumps above are the only ways to break from this loop
 
       sub al, '0' ; convert ASCII number (of type string) to hex format (e.g.: ('1'=31h) - ('0'=30h) = 1h)
 
@@ -126,100 +261,76 @@ start:
     mov si, 0 ; source index of which element/number to retrieve from array
 
     disp_nums_loop:
+      ;ph2a array[si], 4  ; prints a whole number (of 4 digits) in ascii format
+      push bx
+
       mov ax, array[si]
       mov dx, 0
-      mov cx, 1000d
-      div cx ; dx-ax / cx => dx = remainder, ax = quotient
 
-      ; ----
-      push ax
-      push ax ; for some reason 'hex2ascii' expects ax to be pushed twice
-              ; (or to find the input variable from a specific location of the stack)...
-      call hex2ascii
-      pop ax
+      mov cx, dnum
+      dec cx
+      mov bx, 1
+      mulbx10:
+        imul bx, 10
+      loop mulbx10
+      mov cx, bx
 
-      disp buffer[3]  ; display the thousands
+      ploop:
+        mov dx, 0
+        div cx ; dx-ax / cx => dx = remainder, ax = quotient
 
-      xchg dx, ax
-      ; ----
+        push ax
+        push ax
+        call hex2ascii
+        pop ax
 
-      mov cl, 100d
-      div cl ; ax / 100 => ah = remainder, al = quotient
+        print_char buffer[3]
 
-      mov dx, 0
-      mov dl, al
+        xchg dx, ax
 
-      ; ----
-      push ax
-      push ax
-      call hex2ascii
-      pop ax
+        ; check condition:
+        cmp cx, 1
+        je haha
 
-      disp buffer[3]  ; display the hundreds
+        ; divide cx by 10:
+        push ax
+        push dx
+        mov dx, 0
+        mov ax, cx
+        mov cx, 10
+        div cx
+        mov cx, ax
+        pop dx
+        pop ax
+        ; ----
+      jmp ploop
+      
+      haha:
+      pop bx
 
-      xchg al, ah
-      ; ----
+      print_char space
 
-      mov ah, 0
-      mov cl, 10d
-      div cl ; ax / 100 => ah = remainder, al = quotient
-
-      mov dx, 0
-      mov dl, al
-
-      ; ----
-      push ax
-      push dx
-      call hex2ascii
-      pop ax
-
-      disp buffer[3]  ; display the tens
-
-      xchg al, ah
-      ; ----
-
-      mov ah, 0
-
-      ; ----
-      push ax
-      push ax
-      call hex2ascii
-      pop ax
-
-      disp buffer[3]  ; display the units
-      ; ---- ----
-
-      disp space
       add si, 2 ; increase si by 2 to get the next whole number in the next iteration
 
       inc bx
-      cmp bx, 3d  ; 3 is the limit of how many whole numbers should be displayed in the current row,
+      cmp bx, 3d  ; 3 is the limit of how many whole numbers (of 4 digits) should be displayed in the current row,
                   ; once bx reach this, the code continues below
     jne disp_nums_loop
       mov bx, 0
-      disp new_line
+      print_char new_line
       cmp si, 18d ; same situation with 'cmp di, 18' above
     jne disp_nums_loop
 
     ; MENU
+    l_menu:
     ; Print 0th message; which tells how to exit.
-    lea si, msg0
-    mov di, line_1
-    l_msg0:
-      movsb
-      inc di
-      cmp byte ptr[si], eom
-    jne l_msg0
-
+    print_text msg0, line_1
     ; Print 1st message; which tells how to give new numbers.
-    lea si, msg1
-    mov di, line_2
-    l_msg1:
-      movsb
-      inc di
-      cmp byte ptr[si], eom
-    jne l_msg1
+    print_text msg1, line_2
+    ; Print 2nd message; which tells how to print the sum.
+    print_text msg2, line_3
 
+    ; Keyboard input detection, for menu item selection:
     kbd:
       mov ah, 6 ; direct console read/write
       mov dl, 0ffh; ; reads the console, sets AL to typed ASCII character
@@ -229,7 +340,96 @@ start:
       je l_exit
       cmp al, '1'
       je read_nums
+      cmp al, '2'
+      je print_sum
     jmp kbd
+
+    print_sum:
+      push ax
+      push di
+      push cx
+
+      ; calculation of the sum
+      mov ax, 0 ; register to hold the sum
+      mov di, 0 ; index to array's element, starting from the first (position 0)
+      mov cx, 9 ; number of iterations, equal to number's count
+      sum_loop:
+        add ax, array[di]
+        add di, 2 ; each number is 2 bytes long, so di is increased by 2
+      loop sum_loop
+
+      ; display the message which tells that in the next line the sum is displayed
+      call cls ; first clear the screen
+      print_text msg_sum, line_24
+      ; print the sum in that next line
+      ;ph2a ax, 4
+      push bx
+
+      ;mov ax, hex
+      mov dx, 0
+
+      mov cx, 5
+      dec cx
+      mov bx, 1
+      mulbx101:
+        imul bx, 10
+      loop mulbx101
+      mov cx, bx
+
+      ploop1:
+        mov dx, 0
+        div cx ; dx-ax / cx => dx = remainder, ax = quotient
+
+        push ax
+        push ax
+        call hex2ascii
+        pop ax
+
+        print_char buffer[3]
+
+        xchg dx, ax
+
+        ; check condition:
+        cmp cx, 1
+        je haha1
+
+        ; divide cx by 10:
+        push ax
+        push dx
+        mov dx, 0
+        mov ax, cx
+        mov cx, 10
+        div cx
+        mov cx, ax
+        pop dx
+        pop ax
+        ; ----
+      jmp ploop1
+      
+      haha1:
+      pop bx
+
+      ; print message in the first line, which tells how to go back to the menu
+      print_text msg_gotoMenu, line_1
+
+      ; wait for any key press
+      mov ah, 07h
+      int 21h
+
+      call cls
+
+      ; set cursor position:
+      mov ah, 2h  ; subfunction code
+      mov dh, 24  ; row
+      mov dl, 0   ; column
+      mov bh, 0   ; display page number
+      int 10h     ; https://en.wikipedia.org/wiki/INT_10H
+      ; cursor is set back to the bottom-left position of the screen
+
+      pop cx
+      pop di
+      pop ax
+    jmp disp_nums
 
     l_exit:
     ret
@@ -237,20 +437,22 @@ start:
 
   ; Subroutines
   cls proc near
+    push ax
     push cx
     push di
-		mov di, 0
 
-		mov al, ' '
-		mov ah, cls_color
+    mov al, ' '
+    mov ah, cls_color
 
-		mov cx, scrw
-		rep stosw ; es:di <- ax, di <- di+2
+    mov di, 0
+    mov cx, scrw
+    rep stosw ; es:di <- ax, di <- di+2
 
     pop di
-		pop cx
-		ret
-	cls endp
+    pop cx
+    pop ax
+    ret
+  cls endp
 
   HEX2ASCII PROC NEAR
     ; Converts a word variable to ASCII
@@ -259,7 +461,8 @@ start:
     ; gets a word variable from the stack
     push bp
     mov bp, sp
-    mov ax, [bp+4] ; take input variable
+    mov ax, [bp+4]  ; take input variable
+                    ; it takes the ax value that was pushed last before this subroutine was called
     push cx
     mov cx, 4
     mov bp, cx
@@ -279,7 +482,11 @@ start:
     jnz H2A1
     pop cx
     pop bp
-    ret 2
+    ret 2 ; ... may optionally specify an immediate operand, by adding this constant to the stack pointer,
+          ; they effectively remove any arguments that the calling program pushed on the stack before
+          ; the execution of the call instruction.
+          ; Effectively, in this case, it removes the data that was pushed onto the stack (i.e. 'push ax'),
+          ; before this subroutine was called.
   HEX2ASCII ENDP
   
 code ends
