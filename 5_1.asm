@@ -30,24 +30,31 @@ print_text MACRO text, pos
   pop si
 ENDM
 
-ph2a MACRO hex, dnum
-  LOCAL haha
-  LOCAL mulbx10
-  LOCAL ploop
+printHex2Ascii MACRO hex, digits_num
+  LOCAL mulbx
+  LOCAL print_loop
+  LOCAL end_macro
   push bx
 
   mov ax, hex
   mov dx, 0
 
-  mov cx, dnum
+  mov cx, digits_num
   dec cx
   mov bx, 1
-  mulbx10:
+  mulbx:
     imul bx, 10
-  loop mulbx10
+  loop mulbx
   mov cx, bx
 
-  ploop:
+  print_loop:
+    mov dx, 0 ; We don't care about the quotient (which after the xchg is now on dx),
+              ; and also it prevents problems with the division (div cx),
+              ; because otherwise if dx is not 0, the dividend (dx-ax) would become
+              ; a quite large and unwanted/wrong number, and the program will crash
+              ; (especially when the divisor (cx) equals 1, the quotient (ax) would be
+              ; equal to the dividend (dx-ax) and as it's obvious ax (16 bit) cannot
+              ; store dx-ax (32 bit)).
     div cx ; dx-ax / cx => dx = remainder, ax = quotient
 
     push ax
@@ -61,7 +68,7 @@ ph2a MACRO hex, dnum
 
     ; check condition:
     cmp cx, 1
-    je haha
+    je end_macro
 
     ; divide cx by 10:
     push ax
@@ -74,76 +81,10 @@ ph2a MACRO hex, dnum
     pop dx
     pop ax
     ; ----
-  jmp ploop
+  jmp print_loop
   
-  haha:
+  end_macro:
   pop bx
-ENDM
-
-printHex2Ascii MACRO hex
-  mov ax, hex
-  mov dx, 0
-  mov cx, 1000d
-  div cx ; dx-ax / cx => dx = remainder, ax = quotient
-
-  ; ----
-  push ax
-  push ax ; ax is pushed twice, because the called subroutine below, when it returns
-          ; discards what was just pushed onto the stack before it was called
-  call hex2ascii  ; 'call' first pushes the current address onto the stack, then does
-                  ; an unconditional jump to the specified label (i.e. the name of the subroutine)
-  pop ax
-
-  print_char buffer[3]  ; display the thousands
-
-  xchg dx, ax
-  ; ----
-
-  mov cl, 100d
-  div cl ; ax / 100 => ah = remainder, al = quotient
-
-  mov dx, 0
-  mov dl, al
-
-  ; ----
-  push ax
-  push ax
-  call hex2ascii
-  pop ax
-
-  print_char buffer[3]  ; display the hundreds
-
-  xchg al, ah
-  ; ----
-
-  mov ah, 0
-  mov cl, 10d
-  div cl ; ax / 100 => ah = remainder, al = quotient
-
-  mov dx, 0
-  mov dl, al
-
-  ; ----
-  push ax
-  push ax
-  call hex2ascii
-  pop ax
-
-  print_char buffer[3]  ; display the tens
-
-  xchg al, ah
-  ; ----
-
-  mov ah, 0
-
-  ; ----
-  push ax
-  push ax
-  call hex2ascii
-  pop ax
-
-  print_char buffer[3]  ; display the units
-  ; ---- ----
 ENDM
 
 ; Constants
@@ -261,52 +202,7 @@ start:
     mov si, 0 ; source index of which element/number to retrieve from array
 
     disp_nums_loop:
-      ;ph2a array[si], 4  ; prints a whole number (of 4 digits) in ascii format
-      push bx
-
-      mov ax, array[si]
-      mov dx, 0
-
-      mov cx, dnum
-      dec cx
-      mov bx, 1
-      mulbx10:
-        imul bx, 10
-      loop mulbx10
-      mov cx, bx
-
-      ploop:
-        mov dx, 0
-        div cx ; dx-ax / cx => dx = remainder, ax = quotient
-
-        push ax
-        push ax
-        call hex2ascii
-        pop ax
-
-        print_char buffer[3]
-
-        xchg dx, ax
-
-        ; check condition:
-        cmp cx, 1
-        je haha
-
-        ; divide cx by 10:
-        push ax
-        push dx
-        mov dx, 0
-        mov ax, cx
-        mov cx, 10
-        div cx
-        mov cx, ax
-        pop dx
-        pop ax
-        ; ----
-      jmp ploop
-      
-      haha:
-      pop bx
+      printHex2Ascii array[si], 4  ; prints a whole number (of 4 digits) in ascii format
 
       print_char space
 
@@ -350,7 +246,7 @@ start:
       push cx
 
       ; calculation of the sum
-      mov ax, 0 ; register to hold the sum
+      mov ax, 0 ; register to hold the sum (it will be overflowed if the numbers are big)
       mov di, 0 ; index to array's element, starting from the first (position 0)
       mov cx, 9 ; number of iterations, equal to number's count
       sum_loop:
@@ -362,52 +258,7 @@ start:
       call cls ; first clear the screen
       print_text msg_sum, line_24
       ; print the sum in that next line
-      ;ph2a ax, 4
-      push bx
-
-      ;mov ax, hex
-      mov dx, 0
-
-      mov cx, 5
-      dec cx
-      mov bx, 1
-      mulbx101:
-        imul bx, 10
-      loop mulbx101
-      mov cx, bx
-
-      ploop1:
-        mov dx, 0
-        div cx ; dx-ax / cx => dx = remainder, ax = quotient
-
-        push ax
-        push ax
-        call hex2ascii
-        pop ax
-
-        print_char buffer[3]
-
-        xchg dx, ax
-
-        ; check condition:
-        cmp cx, 1
-        je haha1
-
-        ; divide cx by 10:
-        push ax
-        push dx
-        mov dx, 0
-        mov ax, cx
-        mov cx, 10
-        div cx
-        mov cx, ax
-        pop dx
-        pop ax
-        ; ----
-      jmp ploop1
-      
-      haha1:
-      pop bx
+      printHex2Ascii ax, 5
 
       ; print message in the first line, which tells how to go back to the menu
       print_text msg_gotoMenu, line_1
@@ -491,3 +342,69 @@ start:
   
 code ends
 end start
+
+; old_printHex2Ascii MACRO hex
+;   mov ax, hex
+;   mov dx, 0
+;   mov cx, 1000d
+;   div cx ; dx-ax / cx => dx = remainder, ax = quotient
+
+;   ; ----
+;   push ax
+;   push ax ; ax is pushed twice, because the called subroutine below, when it returns
+;           ; discards what was just pushed onto the stack before it was called
+;   call hex2ascii  ; 'call' first pushes the current address onto the stack, then does
+;                   ; an unconditional jump to the specified label (i.e. the name of the subroutine)
+;   pop ax
+
+;   print_char buffer[3]  ; display the thousands
+
+;   xchg dx, ax
+;   ; ----
+
+;   mov cl, 100d
+;   div cl ; ax / 100 => ah = remainder, al = quotient
+
+;   mov dx, 0
+;   mov dl, al
+
+;   ; ----
+;   push ax
+;   push ax
+;   call hex2ascii
+;   pop ax
+
+;   print_char buffer[3]  ; display the hundreds
+
+;   xchg al, ah
+;   ; ----
+
+;   mov ah, 0
+;   mov cl, 10d
+;   div cl ; ax / 100 => ah = remainder, al = quotient
+
+;   mov dx, 0
+;   mov dl, al
+
+;   ; ----
+;   push ax
+;   push ax
+;   call hex2ascii
+;   pop ax
+
+;   print_char buffer[3]  ; display the tens
+
+;   xchg al, ah
+;   ; ----
+
+;   mov ah, 0
+
+;   ; ----
+;   push ax
+;   push ax
+;   call hex2ascii
+;   pop ax
+
+;   print_char buffer[3]  ; display the units
+;   ; ---- ----
+; ENDM
