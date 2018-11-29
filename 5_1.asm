@@ -1,20 +1,21 @@
 .486
 assume cs:code, ds:data, ss:stack
 
-print_char MACRO char
+print_text_on_cursor MACRO text ; text must end with '$'
   push ax
   push dx
 
-  mov ah, 09h ; display a character string (must end with an ASCII $ (24H))
-  mov dx, offset char ; offset of char from segment (where data is located), dx refers to the address of the character string
+  mov ah, 09h ; display a text string (must end with an ASCII $ (24H))
+  mov dx, offset text ; offset of text from segment (where data is located), dx's value is the address of the text string
   int 21h
 
   pop dx
   pop ax
 ENDM
 
-print_text MACRO text, pos
+print_text_at_pos MACRO text, pos ; text must end with '0'
   LOCAL l_pt
+
   push si
   push di
 
@@ -34,18 +35,19 @@ printHex2Ascii MACRO hex, digits_num
   LOCAL mulbx
   LOCAL print_loop
   LOCAL end_macro
+
   push bx
 
   mov ax, hex
   mov dx, 0
 
   mov cx, digits_num
-  dec cx
+  dec cx  ; cx is decreased by 1, to produce the right divisor (through bx)
   mov bx, 1
   mulbx:
     imul bx, 10
   loop mulbx
-  mov cx, bx
+  mov cx, bx  ; cx now contains the divisor for the first division with dx-ax (the divident) below
 
   print_loop:
     mov dx, 0 ; We don't care about the quotient (which after the xchg is now on dx),
@@ -58,16 +60,20 @@ printHex2Ascii MACRO hex, digits_num
     div cx ; dx-ax / cx => dx = remainder, ax = quotient
 
     push ax
-    push ax
-    call hex2ascii
+    push ax ; ax is pushed twice, because the called subroutine below, when it returns,
+            ; discards (with 'ret 2') what was just pushed onto the stack before it was called
+            ; (actually, 'ret 2' increases the stack pointer by 2)
+    call hex2ascii  ; 'call' first pushes the current address onto the stack, then does
+                    ; an unconditional jump to the specified label (i.e. the name of the subroutine)
     pop ax
 
-    print_char buffer[3]
+    print_text_on_cursor buffer[3]
 
     xchg dx, ax
 
     ; check condition:
-    cmp cx, 1
+    cmp cx, 1 ; when cx is 1, there is no meaning to perform the divisions anymore,
+              ; thus the macro is considered finished
     je end_macro
 
     ; divide cx by 10:
@@ -126,11 +132,9 @@ data segment use16
 
   msg_sum db 'Athroisma twn arithmwn:'
   db eom
-  msg_gotoMenu db 'Press any key to continue...'
+  msg_gotoMenu db 'Press any key, gia epistrofh sto menu epilogwn...'
   db eom
 
-  buf1 db 257 dup(?)
-  db eom
   array dw 18 dup(0) ; 3*3=9*2=18
   db eom
 data ends
@@ -138,51 +142,57 @@ data ends
 code segment use16 para public 'code'
 start:
   main proc far
+    ; set up stack for return
     push ds
     mov ax, 0
     push ax
+    ; ----
 
+    ; set DS register to data segment
     mov ax, data
     mov ds, ax
 
+    ; set ES register to memory location (equals to vidmem = 0b800h) of extra segment
     mov ax, vidmem
     mov es, ax
 
     read_nums:
-    mov di, 0 ; counter of elements/numbers; mainly, the destination index of the array where numbers are stored
+    mov di, 0 ; counter of elements/numbers (with step 2); mainly, the destination index of the array where numbers are stored
 
     read_nums_loop:
     call cls
-    print_text msg, line_24 ; 'Doste ta stoixeia tou 3*3 pinaka:'
+    print_text_at_pos msg, line_24 ; 'Doste ta stoixeia tou X*X pinaka:'
 
     mov cx, 10  ; multiplication factor; later, by multiplying ax each time, the whole number
-                ; (temporarily referred by ax) is factored from units to thousands
-    mov bx, 0   ; actual referrer of whole number; via addition with ax it forms the whole number (in hex format)
+                ; (temporarily as the value of ax) is factored from units to thousands
+    mov bx, 0   ; actual container of whole number; via addition with ax it forms the whole number (in hex format)
 
     read_num:
       mov ah, 1 ; read the keyboard, stores string input (a single char) to al, echoes/displays character on screen
       int 21h   ; (it doesn't wait for pressing ENTER, thus when you press a key, it immediately takes that as input and continues)
       mov ah, 0 ; ah is set to 0 (from 1), because later ax is used to construct (via addition with bx) the typed number
 
+      ; checks to see if typed number is out of range of accepted numbers (0-9),
+      ; if so then jump
       cmp al, '0'
       jb store_read_num
       cmp al, '9'
       ja store_read_num
-      ; if ENTER is pressed, which is equal to 0Dh, it will jump, too
+      ; if ENTER is pressed, which is equal to 0Dh, it will jump, too;
       ; these two jumps above are the only ways to break from this loop
 
       sub al, '0' ; convert ASCII number (of type string) to hex format (e.g.: ('1'=31h) - ('0'=30h) = 1h)
 
       push ax
-      mov ax, bx  ; refers bx to ax, to
+      mov ax, bx  ; ax copies bx, to
       mul cx      ; multiply ax with cx, and store result to ax
-      mov bx, ax  ; ax is referred to bx which is the actual number holder
+      mov bx, ax  ; bx (which is the actual number container) copies ax
                   ; (here, ax is used as a temp register,
       pop ax      ; while its actual value is retained in the stack)
 
-      add bx, ax  ; the previously typed numbers, referred by bx, and constructed so they form a whole number,
+      add bx, ax  ; the previously typed numbers, contained by bx, and constructed so they form a whole number,
                   ; where each typed number takes the right place in the whole via the above multiplication (mul cx),
-                  ; are added with ax, which currently refers to the last typed number (as the current units)
+                  ; are added with ax, which currently contains the last typed number (as the current units)
     jmp read_num
 
     store_read_num:
@@ -202,27 +212,27 @@ start:
     disp_nums_loop:
       printHex2Ascii array[si], 4  ; prints a whole number (of 4 digits) in ascii format
 
-      print_char space
+      print_text_on_cursor space
 
       add si, 2 ; increase si by 2 to get the next whole number in the next iteration
 
-      inc bx
+      inc bx      ; a digit has been displayed, so bx is increased by 1
       cmp bx, 3d  ; 3 is the limit of how many whole numbers (of 4 digits) should be displayed in the current row,
                   ; once bx reach this, the code continues below
     jne disp_nums_loop
-      mov bx, 0
-      print_char new_line
+      mov bx, 0   ; reset bx, for the next iteration
+      print_text_on_cursor new_line
       cmp si, 18d ; same situation with 'cmp di, 18' above
     jne disp_nums_loop
 
     ; MENU
     l_menu:
     ; Print 0th message; which tells how to exit.
-    print_text msg0, line_1
+    print_text_at_pos msg0, line_1
     ; Print 1st message; which tells how to give new numbers.
-    print_text msg1, line_2
+    print_text_at_pos msg1, line_2
     ; Print 2nd message; which tells how to print the sum.
-    print_text msg2, line_3
+    print_text_at_pos msg2, line_3
 
     ; Keyboard input detection, for menu item selection:
     kbd:
@@ -244,7 +254,7 @@ start:
       push cx
 
       ; calculation of the sum
-      mov ax, 0 ; register to hold the sum (it will be overflowed if the numbers are big)
+      mov ax, 0 ; register to contain the sum (it will be overflowed if the numbers are big)
       mov di, 0 ; index to array's element, starting from the first (position 0)
       mov cx, 9 ; number of iterations, equal to number's count
       sum_loop:
@@ -254,12 +264,12 @@ start:
 
       ; display the message which tells that in the next line the sum is displayed
       call cls ; first clear the screen
-      print_text msg_sum, line_24
+      print_text_at_pos msg_sum, line_24
       ; print the sum in that next line
-      printHex2Ascii ax, 5
+      printHex2Ascii ax, 5  ; sum is displayed with 5 digits
 
       ; print message in the first line, which tells how to go back to the menu
-      print_text msg_gotoMenu, line_1
+      print_text_at_pos msg_gotoMenu, line_1
 
       ; wait for any key press
       mov ah, 07h
@@ -338,69 +348,3 @@ start:
   
 code ends
 end start
-
-; old_printHex2Ascii MACRO hex
-;   mov ax, hex
-;   mov dx, 0
-;   mov cx, 1000d
-;   div cx ; dx-ax / cx => dx = remainder, ax = quotient
-
-;   ; ----
-;   push ax
-;   push ax ; ax is pushed twice, because the called subroutine below, when it returns
-;           ; discards what was just pushed onto the stack before it was called
-;   call hex2ascii  ; 'call' first pushes the current address onto the stack, then does
-;                   ; an unconditional jump to the specified label (i.e. the name of the subroutine)
-;   pop ax
-
-;   print_char buffer[3]  ; display the thousands
-
-;   xchg dx, ax
-;   ; ----
-
-;   mov cl, 100d
-;   div cl ; ax / 100 => ah = remainder, al = quotient
-
-;   mov dx, 0
-;   mov dl, al
-
-;   ; ----
-;   push ax
-;   push ax
-;   call hex2ascii
-;   pop ax
-
-;   print_char buffer[3]  ; display the hundreds
-
-;   xchg al, ah
-;   ; ----
-
-;   mov ah, 0
-;   mov cl, 10d
-;   div cl ; ax / 100 => ah = remainder, al = quotient
-
-;   mov dx, 0
-;   mov dl, al
-
-;   ; ----
-;   push ax
-;   push ax
-;   call hex2ascii
-;   pop ax
-
-;   print_char buffer[3]  ; display the tens
-
-;   xchg al, ah
-;   ; ----
-
-;   mov ah, 0
-
-;   ; ----
-;   push ax
-;   push ax
-;   call hex2ascii
-;   pop ax
-
-;   print_char buffer[3]  ; display the units
-;   ; ---- ----
-; ENDM
