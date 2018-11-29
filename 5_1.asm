@@ -95,8 +95,6 @@ cls_color equ 7
 dollar equ '$'
 eom equ 0
 
-dnum equ 4
-
 ; Segments
 stack segment use16 para stack
   db 256 dup(' ')
@@ -266,8 +264,6 @@ start:
       ; wait for any key press
       mov ah, 07h
       int 21h
-
-      call cls
 
       ; set cursor position:
       mov ah, 2h  ; subfunction code
