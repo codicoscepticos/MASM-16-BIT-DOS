@@ -1,6 +1,7 @@
 .486
 assume cs:code, ds:data, ss:stack
 
+; Macros
 print_text_on_cursor MACRO text ; text must end with '$'
   push ax
   push dx
@@ -96,10 +97,17 @@ ENDM
 ; Constants
 vidmem equ 0b800h
 scrw equ 80*25
-cls_color equ 7
+cls_color equ 07  ; background = 0 (black), foreground = 7 (white)
 
 dollar equ '$'
 eom equ 0
+
+; size of array: 
+array_rows equ 4
+array_cols equ 4
+elements_num equ array_rows*array_cols  ; 4*4=16
+array_size equ elements_num*2 ; 16*2=32 (multiplied by 2, because each element
+                              ; of the array takes 2 bytes in memory)
 
 ; Segments
 stack segment use16 para stack
@@ -121,21 +129,23 @@ data segment use16
   line_24 dw 3680d  ; one line above from the last line on screen
   line_25 dw 3840d  ; last line on screen
 
-  msg db 'Doste ta stoixeia tou 3*3 pinaka:'
+  msg db 'Type the elements of the ', array_rows+48, '*', array_cols+48, ' array:'
+                                                ; 48 is added to the values to get their
+                                                ; ASCII representation.
   db eom
-  msg0 db '(0) Gia exodo apo to programma.'
+  msg0 db '(0) Exit.'
   db eom
-  msg1 db '(1) Gia na dosete kainourgia stoixeia ston pinaka.'
+  msg1 db '(1) Give new elements.'
   db eom
-  msg2 db '(2) Gia thn emfanish tou athroismatos twn stoixeiwn.'
-  db eom
-
-  msg_sum db 'Athroisma twn arithmwn:'
-  db eom
-  msg_gotoMenu db 'Press any key, gia epistrofh sto menu epilogwn...'
+  msg2 db '(2) Sum of elements.'
   db eom
 
-  array dw 18 dup(0) ; 3*3=9*2=18
+  msg_sum db 'Sum of elements:'
+  db eom
+  msg_gotoMenu db 'Press any key, to return to the menu...'
+  db eom
+
+  array dw array_size dup(0)
   db eom
 data ends
 
@@ -161,7 +171,7 @@ start:
 
     read_nums_loop:
     call cls
-    print_text_at_pos msg, line_24 ; 'Doste ta stoixeia tou X*X pinaka:'
+    print_text_at_pos msg, line_24 ; 'Type the elements of the X*X array:'
 
     mov cx, 10  ; multiplication factor; later, by multiplying ax each time, the whole number
                 ; (temporarily as the value of ax) is factored from units to thousands
@@ -197,9 +207,9 @@ start:
 
     store_read_num:
     mov array[di], bx
-    add di, 2   ; Each data location is 8 bit (i.e. 1 byte each), ax is 16 bit (2 bytes),
-                ; thus it takes 2 locations to be saved, and that's why di is increased by 2.
-    cmp di, 18  ; And that's why it checks for 9*2=18 (here it has nothing to do about color).
+    add di, 2 ; Each data location is 8 bit (i.e. 1 byte each), ax is 16 bit (2 bytes),
+              ; thus it takes 2 locations to be saved, and that's why di is increased by 2.
+    cmp di, array_size  ; And that's why it checks for elements_num*2=array_size (here it has nothing to do about color).
     je disp_nums
     jmp read_nums_loop
 
@@ -217,12 +227,12 @@ start:
       add si, 2 ; increase si by 2 to get the next whole number in the next iteration
 
       inc bx      ; a digit has been displayed, so bx is increased by 1
-      cmp bx, 3d  ; 3 is the limit of how many whole numbers (of 4 digits) should be displayed in the current row,
-                  ; once bx reach this, the code continues below
+      cmp bx, array_rows  ; is the limit of how many whole numbers (of 4 digits) should be displayed in the current row,
+                          ; once bx reach this, the code continues below
     jne disp_nums_loop
       mov bx, 0   ; reset bx, for the next iteration
       print_text_on_cursor new_line
-      cmp si, 18d ; same situation with 'cmp di, 18' above
+      cmp si, array_size ; same situation with 'cmp di, 18' above
     jne disp_nums_loop
 
     ; MENU
@@ -256,7 +266,7 @@ start:
       ; calculation of the sum
       mov ax, 0 ; register to contain the sum (it will be overflowed if the numbers are big)
       mov di, 0 ; index to array's element, starting from the first (position 0)
-      mov cx, 9 ; number of iterations, equal to number's count
+      mov cx, elements_num ; number of iterations, equal to element's number
       sum_loop:
         add ax, array[di]
         add di, 2 ; each number is 2 bytes long, so di is increased by 2
