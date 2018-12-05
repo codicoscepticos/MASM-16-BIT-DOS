@@ -232,7 +232,7 @@ start:
     jne disp_nums_loop
       mov bx, 0   ; reset bx, for the next iteration
       print_text_on_cursor new_line
-      cmp si, array_size ; same situation with 'cmp di, 18' above
+      cmp si, array_size ; same situation with 'cmp bx, array_rows' above
     jne disp_nums_loop
 
     ; MENU
