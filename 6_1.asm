@@ -35,6 +35,8 @@ ENDM
 printHex2Ascii MACRO hex, digits_num
   LOCAL mulbx
   LOCAL print_loop
+  LOCAL l_display_digit
+  LOCAL l_leading_zero_false
   LOCAL end_macro
 
   push bx
@@ -50,6 +52,7 @@ printHex2Ascii MACRO hex, digits_num
   loop mulbx
   mov cx, bx  ; cx now contains the divisor for the first division with dx-ax (the divident) below
 
+  mov leading_zero, 1
   print_loop:
     mov dx, 0 ; We don't care about the quotient (which after the xchg is now on dx),
               ; and also it prevents problems with the division (div cx),
@@ -68,7 +71,44 @@ printHex2Ascii MACRO hex, digits_num
                     ; an unconditional jump to the specified label (i.e. the name of the subroutine)
     pop ax
 
+    ; ---- trim leading zeros (trim e.g. 0009 to 9, 0125 to 125 etc) ----
+    push ax
+    mov ah, buffer[3] ; Because we have defined buffer to contain elements
+                      ; of 1 byte, we can't copy an element from buffer
+                      ; to ax (which the latter is 2 bytes).
+                      ; Therefore, we have to use ah (which is 1 byte) and
+                      ; complies with the size of buffer's elements.
+    cmp ah, '0'               ; Check if digit is 0, and
+    jne l_leading_zero_false  ; if not, then digit is 1-9 and jump to
+                              ; set the flag leading_zero to 0 and
+                              ; then just display the digit.
+    cmp leading_zero, 1       ; (Else, digit is 0 and) check if it's a
+                              ; leading zero, and
+    jne l_display_digit       ; if not, then jump to just display it.
+                              ; Else, digit is 0 and it's a leading zero, so:
+    mov buffer[3], dollar     ; We convert digit 0 to dollar ($) sign,
+                              ; because with just that character the macro
+                              ; 'print_text_on_cursor' will display nothing.
+    jmp l_display_digit       ; Jump to execute that macro.
+    
+    l_leading_zero_false:
+    mov leading_zero, 0
+    
+    l_display_digit:
     print_text_on_cursor buffer[3]
+
+    ; pseudocode:
+    ; if (digit != 0) then
+    ;   set leading_zero equal to 0/false
+    ;   display the digit
+    ; else if (digit == 0 AND leading_zero == 0/false) then
+    ;   display the digit
+    ; else  ; (digit == 0 AND leading_zero == 1/true)
+    ;   convert the digit 0 to '$'
+    ;   display the digit
+    ; end
+    pop ax
+    ; ---- trimming ends here ----
 
     xchg dx, ax
 
@@ -96,6 +136,11 @@ ENDM
 
 ; Constants
 dollar equ '$'
+neg_sign equ 242dh  ; 24 is the dollar ($) sign, 2d is the hyphen (-) character.
+; They're placed according to the little-endian format, in which
+; Intel x86 assembly is based on. This is used to display the negative sign.
+; The dollar sign is included, because the macro 'print_text_on_cursor'
+; terminates the displaying of text when it finds the dollar sign.
 
 ; Segments
 stack segment use16 para stack
@@ -103,21 +148,24 @@ stack segment use16 para stack
 stack ends
 
 data segment use16
-  array dw 9, 18, -118, 6, -125, 4, -9, 2, 1
+  array dw 9, 198, -108, 6, -125, 40, -9, 202, 1
   elements_num equ (($-array)/2)  ; $-array generates the length of the array
   ; (($-array)/2) calculates the number of elements:
   ; the length of the array is divided by 2, because each
   ; element takes 2 bytes in memory, and thus that calculation
   ; returns the number of elements.
 
-  msg_in db 'Insert number: '
+  msg_unsort db 'Unsorted list:'
   db dollar
-  new_line db 10, 13
+  msg_bsort db 'Bubble-sorted list:'
+  db dollar
+
+  new_line db 10, 13  ; 10=CR:Carriage Return, 13=LF:Line Feed (Windows endings)
   db dollar
 
   swap_count db 1
-  
   sign dw dollar
+  leading_zero db 1
 
   buffer db 4 dup(0)
   db dollar
@@ -137,8 +185,9 @@ main proc far
   mov ds, ax
 
   print_text_on_cursor new_line
-  call display_array
+  print_text_on_cursor msg_unsort
   print_text_on_cursor new_line
+  call display_array
   print_text_on_cursor new_line
 
   ; ---- actual sorting starts here ----
@@ -182,8 +231,9 @@ main proc far
 
   ; ---- end of sorting ----
   done:
-  call display_array
+  print_text_on_cursor msg_bsort
   print_text_on_cursor new_line
+  call display_array
   print_text_on_cursor new_line
   ret ; return to DOS
 main endp
@@ -208,7 +258,10 @@ display_array proc near
     ; display the sign and the number
     print_text_on_cursor sign ; display the sign (just before the number),
                               ; (in case it's positive, display nothing)
-    printHex2Ascii bx, 3  ; convert the absolute to ascii
+    printHex2Ascii bx, 3  ; convert the absolute (hex) number to ascii
+                          ; We set 3 as the number of digits to display,
+                          ; because the maximum (absolute) number it can
+                          ; display is constituted of 3 digits (-128 or 127).
     print_text_on_cursor new_line
 
     pop di
@@ -224,7 +277,7 @@ display_array proc near
   ret ; return to main procedure
 
   l_negative_number:
-    mov sign, 242dh
+    mov sign, neg_sign
     ; calculate the absolute value of the negative number:
     mov ax, array[di]
     and ax, 00ffh
