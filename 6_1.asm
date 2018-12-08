@@ -50,9 +50,11 @@ printHex2Ascii MACRO hex, digits_num
   mulbx:
     imul bx, 10
   loop mulbx
-  mov cx, bx  ; cx now contains the divisor for the first division with dx-ax (the divident) below
+  mov cx, bx  ; CX now contains the divisor for the first
+              ; division with dx-ax (the divident) below.
 
-  mov leading_zero, 1
+  mov leading_zero, 1 ; If the first digit is a zero, it's considered as a
+                      ; leading zero.
   print_loop:
     mov dx, 0 ; We don't care about the quotient (which after the xchg is now on dx),
               ; and also it prevents problems with the division (div cx),
@@ -92,7 +94,7 @@ printHex2Ascii MACRO hex, digits_num
     jmp l_display_digit       ; Jump to execute that macro.
     
     l_leading_zero_false:
-    mov leading_zero, 0
+    mov leading_zero, 0 ; Zeroes that aren't leading, are going to be displayed.
     
     l_display_digit:
     print_text_on_cursor buffer[3]
@@ -184,6 +186,7 @@ main proc far
   mov ax, data
   mov ds, ax
 
+  ; display the unsorted list
   print_text_on_cursor new_line
   print_text_on_cursor msg_unsort
   print_text_on_cursor new_line
@@ -197,8 +200,8 @@ main proc far
   cmp al, 0 ; if no swaps, then the array is sorted,
   je done   ; and thus jump to 'done'
   mov swap_count, 0 ; if the array is no sorted yet, then reset swap_count to 0
-  mov di, 0 ; index to array's element, starting from the first (position 0),
-            ; also counter of how how many elements have been checked
+  mov di, 0 ; Index to array's element, starting from the first (position 0),
+            ; also counter of how how many elements have been checked.
 
   next_elem:
   shl di, 1 ; di=di*2
@@ -231,6 +234,7 @@ main proc far
 
   ; ---- end of sorting ----
   done:
+  ; display the bubble-sorted list
   print_text_on_cursor msg_bsort
   print_text_on_cursor new_line
   call display_array
@@ -248,20 +252,26 @@ display_array proc near
 
     shl di, 1 ; di=di*2
     mov ax, array[di]
-    mov bx, ax
+    mov bx, ax  ; The element is copied to bx, as the parameter of the macro
+                ; below, and also because we modify ax later (and thus ax
+                ; can't be used as a parameter of that macro anymore).
     ; check if it's a negative number:
-    and ax, 0ff00h
-    cmp ah, 0ffh
+    and ax, 0ff00h  ; keep only the high byte
+    cmp ah, 0ffh    ; By checking if the high byte is equal to ffh, it can
+                    ; be determined if it's a negative number or not (and
+                    ; that's because all negative numbers' high byte is equal
+                    ; to ffh).
     je l_negative_number
-    mov sign, dollar
+    mov sign, dollar  ; If it isn't a negative number, the sign is just blank,
+                      ; (we tend to ommit the + sign if it's positive).
     l_display:
     ; display the sign and the number
-    print_text_on_cursor sign ; display the sign (just before the number),
-                              ; (in case it's positive, display nothing)
+    print_text_on_cursor sign ; Display the sign (just before the number),
+                              ; (in case it's positive, display nothing).
     printHex2Ascii bx, 3  ; convert the absolute (hex) number to ascii
                           ; We set 3 as the number of digits to display,
                           ; because the maximum (absolute) number it can
-                          ; display is constituted of 3 digits (-128 or 127).
+                          ; display it's constituted of 3 digits (-128 or 127).
     print_text_on_cursor new_line
 
     pop di
@@ -277,13 +287,20 @@ display_array proc near
   ret ; return to main procedure
 
   l_negative_number:
-    mov sign, neg_sign
+    mov sign, neg_sign  ; set sign as the negative (-) sign
     ; calculate the absolute value of the negative number:
     mov ax, array[di]
-    and ax, 00ffh
-    mov bx, 00ffh
-    sub bx, ax
-    add bx, 1
+    and ax, 00ffh ; the value of negative numbers is in the low byte
+    mov bx, 00ffh ; we set the max. value a neg. number can have to bx
+    sub bx, ax  ; Substract the neg. max. value from the current number and
+                ; store to bx.
+    add bx, 1   ; The math. formula to find the absolute value of a negative
+                ; number is: FFh - (low byte hex number) + 1 =
+                ; = (absolute value of negative number).
+                ; Or: 256 - (low byte hex) = (absolute value of negative number)
+                ; But because we can't represent 256 as a hex number, we first
+                ; perform the substraction with 255, and at the end we add 1,
+                ; that is, equivalent to 256 as (255+1).
   jmp l_display
 display_array endp
 
