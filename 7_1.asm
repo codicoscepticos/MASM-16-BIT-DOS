@@ -32,10 +32,23 @@ print_text_at_pos MACRO text, pos ; text must end with '0'
   pop si
 ENDM
 
+m_print_result macro msg, result
+  push msg          ; [bp+6]
+  push result       ; [bp+4]
+  call print_result ; [bp+2]
+endm
+
+m_set_cursor_pos macro row, col, pagenum
+  push row ; [bp+14]
+  push col ; [bp+12]
+  push pagenum ; [bp+10]
+  call set_cursor_pos ; [bp+8]
+endm
+
 m_printHex2Ascii MACRO hex, digits_num
-	push hex            ; [bp+14]
-	push digits_num     ; [bp+12]
-	call printHex2Ascii ; [bp+10] (push return address)
+  push hex            ; [bp+14]
+  push digits_num     ; [bp+12]
+  call printHex2Ascii ; [bp+10] (push return address)
 ENDM
 
 ; Constants
@@ -64,29 +77,29 @@ stack segment use16 para stack
 stack ends
 
 data segment use16
-	buffer db 4 dup(0)
+  buffer db 4 dup(0)
   db dollar
 
   array dw array_size dup(0)
   db eom
-
-	phliko dw 8 dup(0)
-	db eom
+  
+  phliko dw 8 dup(0)
+  db eom
 
   new_line db 10, 13  ; 10=CR:Carriage Return, 13=LF:Line Feed (Windows endings)
   db dollar
-	space db ' '
+  space db ' '
   db dollar
 
-	line_1 dw 0d
+  line_1 dw 0d
   line_2 dw 160d
   line_3 dw 320d
-	line_4 dw 480d
-	line_5 dw 640d
+  line_4 dw 480d
+  line_5 dw 640d
   line_24 dw 3680d  ; one line above from the last line on screen
   line_25 dw 3840d  ; last line on screen
 
-	msg db 'Doste ta stoixeia tou ', array_rows+48, '*', array_cols+48, ' pinaka:'
+  msg db 'Doste ta stoixeia tou ', array_rows+48, '*', array_cols+48, ' pinaka:'
                                             ; 48 is added to the values to get
                                             ; their ASCII representation.
   db eom
@@ -96,9 +109,9 @@ data segment use16
   db eom
   msg2 db '(2) Gia thn emfanish tou athroismatos twn stoixeiwn.'
   db eom
-	msg3 db '(3) Gia thn emfanish ths meshs timhs twn stoixeiwn.'
+  msg3 db '(3) Gia thn emfanish ths meshs timhs twn stoixeiwn.'
   db eom
-	msg4 db '(4) Gia thn emfanish tou tetragwnou ths meshs timhs.'
+  msg4 db '(4) Gia thn emfanish tou tetragwnou ths meshs timhs.'
   db eom
 
   msg_sum db 'Athroisma twn arithmwn:'
@@ -107,13 +120,14 @@ data segment use16
   db eom
 
   sign dw dollar
-  leading_zero db 1
+  leading_zero db 1 ; this is a flag
 
-	sum dw 0
-	average dw 0
-	db eom
-	squared_average dw 0
-	db eom
+  sum dw 0
+  db eom
+  average dw 0
+  db eom
+  squared_average dw 0
+  db eom
 data ends
 
 code segment use16 para public 'code'
@@ -210,9 +224,9 @@ main proc far
   print_text_at_pos msg1, line_2
   ; Print 2nd message; which tells how to print the sum.
   print_text_at_pos msg2, line_3
-	; Print 3rd message; which tells how to print the average.
+  ; Print 3rd message; which tells how to print the average.
   print_text_at_pos msg3, line_4
-	; Print 4th message; which tells how to print the average's square.
+  ; Print 4th message; which tells how to print the average's square.
   print_text_at_pos msg4, line_5
 
   ; Keyboard input detection, for menu item selection:
@@ -227,24 +241,29 @@ main proc far
     je read_nums
     cmp al, '2'
     je l_print_sum
-		cmp al, '3'
-		je print_avg
-		cmp al, '4'
-		je print_sqr_avg
+    cmp al, '3'
+    je print_avg
+    cmp al, '4'
+    je print_sqr_avg
   jmp kbd
 
   l_print_sum:
-		; calculate the sum
-		call calc_sum
+    ; calculate the sum
+    call calc_sum ; modifies variable 'sum'
+    ; and then display/print it on screen
+    m_print_result msg_sum, sum
+
+    call wait_key_press
+    m_set_cursor_pos 24, 0, 0
   jmp disp_nums
 
-	print_avg:
-		;
-	jmp disp_nums
+  print_avg:
+    ;
+  jmp disp_nums
 
-	print_sqr_avg:
-		;
-	jmp disp_nums
+  print_sqr_avg:
+    ;
+  jmp disp_nums
 
   l_exit:
   ret ; return to DOS
@@ -273,36 +292,30 @@ calc_sum proc near
     ret
 calc_sum endp
 
-print_sum proc near
-	push ax
-	push di
-	push cx
+print_result proc near
+  push bp ; [bp+0]
+  mov bp, sp
 
-	; display the message which tells that in the next line the sum is displayed
-	call cls ; first clear the screen
-	print_text_at_pos msg_sum, line_24
-	; print the sum in that next line
-	;m_printHex2Ascii sum, 5  ; sum is displayed with 5 digits
+  push ax, [bp+6]
+  push bx, [bp+4]
 
-	; print message in the first line, which tells how to go back to the menu
-	print_text_at_pos msg_gotoMenu, line_1
+  call cls  ; first clear the screen
+  ; display the message which tells that
+  ; in the next line the result is displayed
+  print_text_at_pos ax, line_24 ; [bp+6] = msg
+  ; print the result in that next line
+  m_printHex2Ascii bx, 5        ; [bp+4] = result
+                                    ; displayed with 5 digits
 
-	; wait for any key press
-	mov ah, 07h
-	int 21h
+  ; print message in the first line, which tells how to go back to the menu
+  print_text_at_pos msg_gotoMenu, line_1
 
-	; set cursor position:
-	mov ah, 2h  ; subfunction code
-	mov dh, 24  ; row
-	mov dl, 0   ; column
-	mov bh, 0   ; display page number
-	int 10h     ; https://en.wikipedia.org/wiki/INT_10H
-	; cursor is set back to the bottom-left position of the screen
+  pop bx
+  pop ax
 
-	pop cx
-	pop di
-	pop ax
-print_sum endp
+  pop bp
+  ret 4 ; 2 parameters * 2 bytes = increase SP by 4
+print_result endp
 
 printHex2Ascii proc near
   push ax ; [bp+8]
@@ -416,14 +429,14 @@ printHex2Ascii proc near
   
   end_proc:
   ; restore... (popping in the reverse order compared to pushing)
-	; ...the old base pointer:
-	pop bp
-	; ...the values of the registers:
+  ; ...the old base pointer:
+  pop bp
+  ; ...the values of the registers:
   pop dx
   pop cx
   pop bx
   pop ax
-
+ 
   ret 4	; Probably not exactly in this order, but:
         ; * Pop from the stack the return address (and save it somewhere) and so
         ; increase SP (stack pointer) by 2.
@@ -433,56 +446,92 @@ printHex2Ascii proc near
 printHex2Ascii endp
 
 cls proc near
-	push ax
-	push cx
-	push di
+  push ax
+  push cx
+  push di
 
-	mov al, ' '
-	mov ah, cls_color
+  mov al, ' '
+  mov ah, cls_color
 
-	mov di, 0
-	mov cx, scrw
-	rep stosw ; es:di <- ax, di <- di+2
+  mov di, 0
+  mov cx, scrw
+  rep stosw ; es:di <- ax, di <- di+2
 
-	pop di
-	pop cx
-	pop ax
-	ret
+  pop di
+  pop cx
+  pop ax
+  ret
 cls endp
 
+wait_key_press proc near
+  push ax
+
+  ; wait for any key press
+  mov ah, 07h
+  int 21h
+
+  pop ax
+  ret
+wait_key_press endp
+
+set_cursor_pos proc near
+  push ax ; [bp+6]
+  push bx ; [bp+4]
+  push dx ; [bp+2]
+
+  push bp ; [bp+0]
+  mov bp, sp
+
+  ; set cursor position:
+  mov ah, 2h        ; subfunction code
+  mov dh, [bp+14]   ; row
+  mov dl, [bp+12]   ; column
+  mov bh, [bp+10]   ; display page number
+  int 10h           ; https://en.wikipedia.org/wiki/INT_10H
+  ; cursor is set back to the bottom-left position of the screen
+
+  pop bp
+
+  pop dx
+  pop bx
+  pop ax
+
+  ret 6; 3 parameters * 2 bytes = increase SP by 6
+set_cursor_pos endp
+
 HEX2ASCII PROC NEAR
-	; Converts a word variable to ASCII
-	; Writes the results in the BUFFER (4 bytes) variable
-	; PARAMETERS
-	; gets a word variable from the stack
-	push bp
-	mov bp, sp
-	mov ax, [bp+4]  ; take input variable
-									; it takes the ax value that was pushed last before this subroutine was called
-	push cx
-	mov cx, 4
-	mov bp, cx
-	H2A1:
-	push ax
-	and al, 0Fh
-	add al, 30h
-	cmp al, '9'
-	jbe H2A2
-	add al, 7h
-	H2A2:
-	dec cx
-	mov bp, cx
-	mov buffer[bp], al
-	pop ax
-	ror ax, 4
-	jnz H2A1
-	pop cx
-	pop bp
-	ret 2 ; ... may optionally specify an immediate operand, by adding this constant to the stack pointer,
-				; they effectively remove any arguments that the calling program pushed on the stack before
-				; the execution of the call instruction.
-				; Effectively, in this case, it removes the data that was pushed onto the stack (i.e. 'push ax'),
-				; before this subroutine was called.
+  ; Converts a word variable to ASCII
+  ; Writes the results in the BUFFER (4 bytes) variable
+  ; PARAMETERS
+  ; gets a word variable from the stack
+  push bp
+  mov bp, sp
+  mov ax, [bp+4]  ; take input variable
+                  ; it takes the ax value that was pushed last before this subroutine was called
+  push cx
+  mov cx, 4
+  mov bp, cx
+  H2A1:
+  push ax
+  and al, 0Fh
+  add al, 30h
+  cmp al, '9'
+  jbe H2A2
+  add al, 7h
+  H2A2:
+  dec cx
+  mov bp, cx
+  mov buffer[bp], al
+  pop ax
+  ror ax, 4
+  jnz H2A1
+  pop cx
+  pop bp
+  ret 2 ; ... may optionally specify an immediate operand, by adding this constant to the stack pointer,
+        ; they effectively remove any arguments that the calling program pushed on the stack before
+        ; the execution of the call instruction.
+        ; Effectively, in this case, it removes the data that was pushed onto the stack (i.e. 'push ax'),
+        ; before this subroutine was called.
 HEX2ASCII ENDP
 
 code ends
