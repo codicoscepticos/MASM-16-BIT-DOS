@@ -2,53 +2,34 @@
 assume cs:code, ds:data, ss:stack
 
 ; Macros
-print_text_on_cursor MACRO text ; text must end with '$'
-  push ax
-  push dx
+m_print_text_on_cursor macro text_offset ; text must end with '$'
+  push text_offset          ; [bp+4]
+  call print_text_on_cursor ; [bp+2]
+endm
 
-  mov ah, 09h ; display a text string (must end with an ASCII $ (24H))
-  mov dx, offset text ; offset of text from segment (where data is located), dx's value is the address of the text string
-  int 21h
+m_print_text_at_pos macro text_offset, pos ; text must end with '0'
+  push text_offset        ; [bp+6]
+  push pos                ; [bp+4]
+  call print_text_at_pos  ; [bp+2]
+endm
 
-  pop dx
-  pop ax
-ENDM
-
-print_text_at_pos MACRO text, pos ; text must end with '0'
-  LOCAL l_pt
-
-  push si
-  push di
-
-  lea si, text
-  mov di, pos
-  l_pt:
-    movsb ; move string byte/data, es:di <- ds:si, di <- di+1, si <- si+1
-    inc di
-    cmp byte ptr[si], eom
-  jne l_pt
-
-  pop di
-  pop si
-ENDM
-
-m_print_result macro msg, result
-  push msg          ; [bp+6]
+m_print_result macro msg_offset, result
+  push msg_offset   ; [bp+6]
   push result       ; [bp+4]
   call print_result ; [bp+2]
 endm
 
 m_set_cursor_pos macro row, col, pagenum
-  push row ; [bp+14]
-  push col ; [bp+12]
-  push pagenum ; [bp+10]
-  call set_cursor_pos ; [bp+8]
+  push row            ; [bp+8]
+  push col            ; [bp+6]
+  push pagenum        ; [bp+4]
+  call set_cursor_pos ; [bp+2]
 endm
 
 m_printHex2Ascii MACRO hex, digits_num
-  push hex            ; [bp+14]
-  push digits_num     ; [bp+12]
-  call printHex2Ascii ; [bp+10] (push return address)
+  push hex            ; [bp+6]
+  push digits_num     ; [bp+4]
+  call printHex2Ascii ; [bp+2] (push return address)
 ENDM
 
 ; Constants
@@ -61,7 +42,7 @@ eom equ 0
 neg_sign equ 242dh	; 24 is the dollar ($) sign, 2d is the hyphen (-) character.
 ; They're placed according to the little-endian format, in which
 ; Intel x86 assembly is based on. This is used to display the negative sign.
-; The dollar sign is included, because the macro 'print_text_on_cursor'
+; The dollar sign is included, because the macro 'm_print_text_on_cursor'
 ; terminates the displaying of text when it finds the dollar sign.
 
 ; size of array: 
@@ -83,12 +64,13 @@ data segment use16
   array dw array_size dup(0)
   db eom
   
-  phliko dw 8 dup(0)
-  db eom
+  quotient dw 2 dup(0)
 
   new_line db 10, 13  ; 10=CR:Carriage Return, 13=LF:Line Feed (Windows endings)
   db dollar
   space db ' '
+  db dollar
+  comma db ','
   db dollar
 
   line_1 dw 0d
@@ -114,19 +96,27 @@ data segment use16
   msg4 db '(4) Gia thn emfanish tou tetragwnou ths meshs timhs.'
   db eom
 
-  msg_sum db 'Athroisma twn arithmwn:'
+  msg_sum db 'Athroisma twn stoixeiwn:'
+  db eom
+  msg_avg db 'Mesh timh twn stoixeiwn:'
+  db eom
+  msg_pow2_avg db 'Tetragwno ths meshs timhs twn stoixeiwn:'
   db eom
   msg_gotoMenu db 'Press any key, gia epistrofh sto menu epilogwn...'
   db eom
 
-  sign dw dollar
+  sign dw dollar    ; sign initialized as '$', because that way the display
+                    ; macro will print nothing, and the absence of sign
+                    ; is used for positive numbers
   leading_zero db 1 ; this is a flag
 
   sum dw 0
   db eom
   average dw 0
   db eom
-  squared_average dw 0
+  remainder dw 0
+  db eom
+  power2_average dw 0
   db eom
 data ends
 
@@ -152,7 +142,7 @@ main proc far
 
   read_nums_loop:
   call cls
-  print_text_at_pos msg, line_24 ; 'Doste ta stoixeia tou X*X pinaka:'
+  m_print_text_at_pos offset msg, line_24 ; 'Doste ta stoixeia tou X*X pinaka:'
 
   mov cx, 10  ; multiplication factor; later, by multiplying ax each time, the whole number
               ; (temporarily as the value of ax) is factored from units to thousands
@@ -175,7 +165,7 @@ main proc far
     sub al, '0' ; convert ASCII number (of type string) to hex format (e.g.: ('1'=31h) - ('0'=30h) = 1h)
 
     push ax
-    mov ax, bx  ; ax copies bx, to
+    mov ax, bx  ; ax copies bx
     mul cx      ; multiply ax with cx, and store result to ax
     mov bx, ax  ; bx (which is the actual number container) copies ax
                 ; (here, ax is used as a temp register,
@@ -188,9 +178,11 @@ main proc far
 
   store_read_num:
   mov array[di], bx
-  add di, 2 ; Each data location is 8 bit (i.e. 1 byte each), ax is 16 bit (2 bytes),
-            ; thus it takes 2 locations to be saved, and that's why di is increased by 2.
-  cmp di, array_size  ; And that's why it checks for elements_num*2=array_size (here it has nothing to do about color).
+  add di, 2           ; Each data location is 8 bit (i.e. 1 byte each),
+                      ; ax is 16 bit (2 bytes), thus it takes 2 locations to
+                      ; be saved, and that's why di is increased by 2.
+  cmp di, array_size  ; And that's why it checks for elements_num*2=array_size
+                      ; (here it has nothing to do about color).
   je disp_nums
   jmp read_nums_loop
 
@@ -203,7 +195,7 @@ main proc far
   disp_nums_loop:
     m_printHex2Ascii array[si], 4  ; prints a whole number (of 4 digits) in ascii format
 
-    print_text_on_cursor space
+    m_print_text_on_cursor offset space
 
     add si, 2 ; increase si by 2 to get the next whole number in the next iteration
 
@@ -212,22 +204,29 @@ main proc far
                         ; once bx reach this, the code continues below
   jne disp_nums_loop
     mov bx, 0   ; reset bx, for the next iteration
-    print_text_on_cursor new_line
+    m_print_text_on_cursor offset new_line
     cmp si, array_size ; same situation with 'cmp bx, array_rows' above
   jne disp_nums_loop
+
+  ; ---- PRECALCULATE EVERYTHING ----
+  call calc_sum                   ; modifies variables: 'sum'
+  call calc_average_and_remainder ; modifies variables: 'average', 'remainder'
+  call calc_quotient              ; modifies variables: 'quotient[]'
+  call calc_pow2_avg              ; modifies variables: 'power2_average'
+  ; ---------------------------------
 
   ; MENU
   l_menu:
   ; Print 0th message; which tells how to exit.
-  print_text_at_pos msg0, line_1
+  m_print_text_at_pos offset msg0, line_1
   ; Print 1st message; which tells how to give new numbers.
-  print_text_at_pos msg1, line_2
+  m_print_text_at_pos offset msg1, line_2
   ; Print 2nd message; which tells how to print the sum.
-  print_text_at_pos msg2, line_3
+  m_print_text_at_pos offset msg2, line_3
   ; Print 3rd message; which tells how to print the average.
-  print_text_at_pos msg3, line_4
+  m_print_text_at_pos offset msg3, line_4
   ; Print 4th message; which tells how to print the average's square.
-  print_text_at_pos msg4, line_5
+  m_print_text_at_pos offset msg4, line_5
 
   ; Keyboard input detection, for menu item selection:
   kbd:
@@ -244,25 +243,27 @@ main proc far
     cmp al, '3'
     je print_avg
     cmp al, '4'
-    je print_sqr_avg
+    je print_pow2_avg
   jmp kbd
 
   l_print_sum:
-    ; calculate the sum
-    call calc_sum ; modifies variable 'sum'
-    ; and then display/print it on screen
-    m_print_result msg_sum, sum
-
-    call wait_key_press
-    m_set_cursor_pos 24, 0, 0
-  jmp disp_nums
+    m_print_result offset msg_sum, sum
+  jmp wait_for_key
 
   print_avg:
-    ;
-  jmp disp_nums
+    m_print_result offset msg_avg, average
+    m_print_text_on_cursor offset comma
+    m_printHex2Ascii quotient[0], 1
+    m_printHex2Ascii quotient[2], 1
+  jmp wait_for_key
 
-  print_sqr_avg:
-    ;
+  print_pow2_avg:
+    m_print_result offset msg_pow2_avg, power2_average
+  ;jmp wait_for_key
+
+  wait_for_key:
+    call wait_key_press
+    m_set_cursor_pos 24, 0, 0
   jmp disp_nums
 
   l_exit:
@@ -292,62 +293,167 @@ calc_sum proc near
     ret
 calc_sum endp
 
-print_result proc near
+calc_average_and_remainder proc near
+  push ax
+  push cx
+  push dx
+
+  mov dx, 0
+  mov ax, sum
+  mov cx, elements_num
+  div cx  ; dx:ax = dx:ax/cx        =>
+          ; sum = sum/elements_num  =>
+          ;                         => ax = average, dx = remainder
+  mov average, ax
+  mov remainder, dx
+
+  pop dx
+  pop cx
+  pop ax
+  ret
+calc_average_and_remainder endp
+
+calc_quotient proc near
+  push ax
+  push cx
+  push dx
+  push di
+
+  ; reset quotient:
+  mov quotient[0], 0
+  mov quotient[2], 0
+
+  mov di, 0
+  mov dx, remainder
+  l_cq:
+    mov ax, dx
+    mov cx, 10
+    mul cx
+
+    mov dx, 0
+    mov cx, elements_num
+    div cx  ; ax = average, dx = remainder
+    mov quotient[di], ax ; digit of quotient
+
+    cmp dx, 0
+    je no_remainder
+
+    add di, 2
+    cmp di, 4
+  jne l_cq
+
+  no_remainder:
+  pop di
+  pop dx
+  pop cx
+  pop ax
+  ret
+calc_quotient endp
+
+calc_pow2_avg proc near
+  push ax
+  
+  mov ax, average
+  mul ax
+  mov power2_average, ax
+  
+  pop ax
+  ret
+calc_pow2_avg endp
+
+print_text_on_cursor proc near  ; has macro, parameters: text_offset
   push bp ; [bp+0]
   mov bp, sp
 
-  push ax, [bp+6]
-  push bx, [bp+4]
+  push ax
+  push dx
+
+  mov ah, 09h ; display a text string (must end with an ASCII $ (24H))
+  mov dx, [bp+4]  ; offset of text from segment (where data is located),
+                  ; dx's value is the address of the text string
+  int 21h
+
+  pop dx
+  pop ax
+
+  pop bp
+  ret 2
+print_text_on_cursor endp
+
+print_text_at_pos proc near  ; has macro, parameters: text_offset, pos
+  push bp ; [bp+0]
+  mov bp, sp
+
+  push si
+  push di
+
+  mov si, [bp+6]  ; offset of text from segment
+  mov di, [bp+4]  ; pos (position of text on screen)
+  l_pt:
+    movsb ; move string byte/data, es:di <- ds:si, di <- di+1, si <- si+1
+    inc di
+    cmp byte ptr[si], eom
+  jne l_pt
+
+  pop di
+  pop si
+
+  pop bp
+  ret 4
+print_text_at_pos endp
+
+print_result proc near  ; has macro, parameters: msg_offset, result
+  push bp ; [bp+0]
+  mov bp, sp
 
   call cls  ; first clear the screen
-  ; display the message which tells that
-  ; in the next line the result is displayed
-  print_text_at_pos ax, line_24 ; [bp+6] = msg
+            ; Display the message which tells that
+            ; in the next line the result is displayed:
+  m_print_text_at_pos [bp+6], line_24 ; [bp+6] = msg_offset
   ; print the result in that next line
-  m_printHex2Ascii bx, 5        ; [bp+4] = result
-                                    ; displayed with 5 digits
+  m_printHex2Ascii [bp+4], 5          ; [bp+4] = result
+                                      ; displayed with 5 digits
 
   ; print message in the first line, which tells how to go back to the menu
-  print_text_at_pos msg_gotoMenu, line_1
-
-  pop bx
-  pop ax
+  m_print_text_at_pos offset msg_gotoMenu, line_1
 
   pop bp
   ret 4 ; 2 parameters * 2 bytes = increase SP by 4
 print_result endp
 
-printHex2Ascii proc near
-  push ax ; [bp+8]
-  push bx ; [bp+6]
-  push cx ; [bp+4]
-  push dx ; [bp+2]
-
+printHex2Ascii proc near  ; has macro, parameters: hex, digits_num
   push bp ; [bp+0]
   mov bp, sp
 
-  ; The 1st parameter 'hex' is located 14 bytes above where the stack pointer
-  ; currently points, and the 2nd parameter 'digits_num' 12 bytes.
+  push ax
+  push bx
+  push cx
+  push dx
+
+  ; The 1st parameter 'hex' is located 6 bytes above where the stack pointer
+  ; currently points, and the 2nd parameter 'digits_num' 4 bytes.
   ; That's because previously has been pushed onto the stack (in descending
   ; order):
-  ; [bp+10] => the return address (when the call to this subroutine was made)
-  ; [bp+8]  => ax
-  ; [bp+6]  => bx
-  ; [bp+4]  => cx
-  ; [bp+2]  => dx
+  ; [bp+2] => the return address (when the call to this subroutine was made)
   ; [bp+0]  => old base pointer
-  mov ax, [bp+14] ; = hex
+  mov ax, [bp+6]  ; hex
   mov dx, 0
 
-  mov cx, [bp+12]	; = digits_num
-  dec cx  ; cx is decreased by 1, to produce the right divisor (through bx)
-  mov bx, 1
+  mov bx, 1       ; initial value of bx
+  mov cx, [bp+4]  ; digits_num
+  dec cx          ; cx is decreased by 1, to produce the right divisor
+                  ; (using the loop 'mulbx').
+  cmp cx, 0       ; if cx = 0, then
+  je setcxbybx    ; don't multiply bx (but just set cx equals to bx), else
+                  ; multiply bx by 10 each time (times equal to cx)
   mulbx:
     imul bx, 10
   loop mulbx
-  mov cx, bx  ; CX now contains the divisor for the first
-              ; division with dx-ax (the divident) below.
 
+  setcxbybx:
+  mov cx, bx  ; cx now contains the divisor for the first
+              ; division with dx-ax (the divident) below.
+  
   mov leading_zero, 1 ; If the first digit is a zero, it's considered as a
                       ; leading zero.
   print_loop:
@@ -358,7 +464,7 @@ printHex2Ascii proc near
               ; (especially when the divisor (cx) equals 1, the quotient (ax) would be
               ; equal to the dividend (dx-ax) and as it's obvious ax (16 bit) cannot
               ; store dx-ax (32 bit)).
-    div cx ; dx-ax / cx => dx = remainder, ax = quotient
+    div cx    ; dx-ax / cx => dx = remainder, ax = quotient
 
     push ax
     push ax ; ax is pushed twice, because the called subroutine below, when it returns,
@@ -377,22 +483,23 @@ printHex2Ascii proc near
                       ; complies with the size of buffer's elements.
     cmp ah, '0'               ; Check if digit is 0, and
     jne l_leading_zero_false  ; if not, then digit is 1-9 and jump to
-                              ; set the flag leading_zero to 0 and
+                              ; set the flag leading_zero to 0 (false) and
                               ; then just display the digit.
     cmp leading_zero, 1       ; (Else, digit is 0 and) check if it's a
                               ; leading zero, and
     jne l_display_digit       ; if not, then jump to just display it.
+    cmp cx, 1                 ; (Else, digit is 0 and) check if it's the
+                              ; last digit, and
+    je l_display_digit        ; if it's, then jump to just display it.
                               ; Else, digit is 0 and it's a leading zero, so:
-    mov buffer[3], 20h     ; We convert digit 0 to dollar ($) sign,
-                              ; because with just that character the macro
-                              ; 'print_text_on_cursor' will display nothing.
-    jmp l_display_digit       ; Jump to execute that macro.
+    mov buffer[3], 20h        ; We convert digit 0 to the space (20h) character.
+    jmp l_display_digit       ; Jump to display it.
     
     l_leading_zero_false:
     mov leading_zero, 0 ; Zeroes that aren't leading, are going to be displayed.
     
     l_display_digit:
-    print_text_on_cursor buffer[3]
+    m_print_text_on_cursor offset buffer[3]
 
     ; pseudocode:
     ; if (digit != 0) then
@@ -410,8 +517,8 @@ printHex2Ascii proc near
     xchg dx, ax
 
     ; check condition:
-    cmp cx, 1 ; when cx is 1, there is no meaning to perform the divisions anymore,
-              ; thus the macro is considered finished
+    cmp cx, 1 ; when cx is 1, there is no meaning to perform the divisions
+              ; anymore, thus the macro is considered finished
     je end_proc
 
     ; divide cx by 10:
@@ -429,14 +536,13 @@ printHex2Ascii proc near
   
   end_proc:
   ; restore... (popping in the reverse order compared to pushing)
-  ; ...the old base pointer:
-  pop bp
   ; ...the values of the registers:
   pop dx
   pop cx
   pop bx
   pop ax
- 
+  ; ...the old base pointer:
+  pop bp
   ret 4	; Probably not exactly in this order, but:
         ; * Pop from the stack the return address (and save it somewhere) and so
         ; increase SP (stack pointer) by 2.
@@ -474,28 +580,27 @@ wait_key_press proc near
   ret
 wait_key_press endp
 
-set_cursor_pos proc near
-  push ax ; [bp+6]
-  push bx ; [bp+4]
-  push dx ; [bp+2]
-
+set_cursor_pos proc near  ; has macro, parameters: row, column, pagenum
   push bp ; [bp+0]
   mov bp, sp
 
+  push ax
+  push bx
+  push dx
+
   ; set cursor position:
   mov ah, 2h        ; subfunction code
-  mov dh, [bp+14]   ; row
-  mov dl, [bp+12]   ; column
-  mov bh, [bp+10]   ; display page number
+  mov dh, [bp+8]   ; row
+  mov dl, [bp+6]   ; column
+  mov bh, [bp+4]   ; display page number
   int 10h           ; https://en.wikipedia.org/wiki/INT_10H
   ; cursor is set back to the bottom-left position of the screen
-
-  pop bp
 
   pop dx
   pop bx
   pop ax
 
+  pop bp
   ret 6; 3 parameters * 2 bytes = increase SP by 6
 set_cursor_pos endp
 
