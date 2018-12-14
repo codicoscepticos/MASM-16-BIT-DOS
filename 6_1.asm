@@ -34,6 +34,7 @@ ENDM
 
 printHex2Ascii MACRO hex, digits_num
   LOCAL mulbx
+  LOCAL setcxbybx
   LOCAL print_loop
   LOCAL l_display_digit
   LOCAL l_leading_zero_false
@@ -44,12 +45,18 @@ printHex2Ascii MACRO hex, digits_num
   mov ax, hex
   mov dx, 0
 
+  mov bx, 1           ; initial value of bx
   mov cx, digits_num
-  dec cx  ; cx is decreased by 1, to produce the right divisor (through bx)
-  mov bx, 1
+  dec cx              ; cx is decreased by 1, to produce the right divisor
+                      ; (using the loop 'mulbx').
+  cmp cx, 0           ; if cx = 0, then
+  je setcxbybx        ; don't multiply bx (but just set cx equals to bx), else
+                      ; multiply bx by 10 each time (times equal to cx)
   mulbx:
     imul bx, 10
   loop mulbx
+
+  setcxbybx:
   mov cx, bx  ; CX now contains the divisor for the first
               ; division with dx-ax (the divident) below.
 
@@ -87,12 +94,15 @@ printHex2Ascii MACRO hex, digits_num
     cmp leading_zero, 1       ; (Else, digit is 0 and) check if it's a
                               ; leading zero, and
     jne l_display_digit       ; if not, then jump to just display it.
+    cmp cx, 1                 ; (Else, digit is 0 and) check if it's the
+                              ; last digit, and
+    je l_display_digit        ; if it's, then jump to just display it.
                               ; Else, digit is 0 and it's a leading zero, so:
     mov buffer[3], dollar     ; We convert digit 0 to dollar ($) sign,
                               ; because with just that character the macro
                               ; 'print_text_on_cursor' will display nothing.
     jmp l_display_digit       ; Jump to execute that macro.
-    
+
     l_leading_zero_false:
     mov leading_zero, 0 ; Zeroes that aren't leading, are going to be displayed.
     
