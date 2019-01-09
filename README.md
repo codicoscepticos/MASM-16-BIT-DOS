@@ -1,1 +1,1 @@
-Assembly files for a university course/project of mine.
+Assembly source code files for a school lab/project.
