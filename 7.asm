@@ -604,11 +604,11 @@ set_cursor_pos proc near  ; has macro, parameters: row, column, pagenum
   push dx
 
   ; set cursor position:
-  mov ah, 2h        ; subfunction code
+  mov ah, 2h       ; subfunction code
   mov dh, [bp+8]   ; row
   mov dl, [bp+6]   ; column
   mov bh, [bp+4]   ; display page number
-  int 10h           ; https://en.wikipedia.org/wiki/INT_10H
+  int 10h          ; https://en.wikipedia.org/wiki/INT_10H
   ; cursor is set back to the bottom-left position of the screen
 
   pop dx
