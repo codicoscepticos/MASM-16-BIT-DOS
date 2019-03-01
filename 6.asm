@@ -6,8 +6,9 @@ print_text_on_cursor MACRO text ; text must end with '$'
   push ax
   push dx
 
-  mov ah, 09h ; display a text string (must end with an ASCII $ (24H))
-  mov dx, offset text ; offset of text from segment (where data is located), dx's value is the address of the text string
+  mov ah, 09h         ; display a text string (must end with an ASCII $ (24H))
+  mov dx, offset text ; offset of text from segment (where data is located),
+                      ; dx's value is the address of the text string
   int 21h
 
   pop dx
@@ -63,21 +64,25 @@ printHex2Ascii MACRO hex, digits_num
   mov leading_zero, 1 ; If the first digit is a zero, it's considered as a
                       ; leading zero.
   print_loop:
-    mov dx, 0 ; We don't care about the quotient (which after the xchg is now on dx),
-              ; and also it prevents problems with the division (div cx),
-              ; because otherwise if dx is not 0, the dividend (dx-ax) would become
-              ; a quite large and unwanted/wrong number, and the program will crash
-              ; (especially when the divisor (cx) equals 1, the quotient (ax) would be
-              ; equal to the dividend (dx-ax) and as it's obvious ax (16 bit) cannot
-              ; store dx-ax (32 bit)).
+    mov dx, 0
+    ; We don't care about the quotient (which after the xchg is now on dx),
+    ; and also it prevents problems with the division (div cx),
+    ; because otherwise if dx is not 0, the dividend (dx-ax) would become
+    ; a quite large and unwanted/wrong number, and the program will crash
+    ; (especially when the divisor (cx) equals 1, the quotient (ax) would be
+    ; equal to the dividend (dx-ax) and as it's obvious ax (16 bit) cannot
+    ; store dx-ax (32 bit)).
+
     div cx ; dx-ax / cx => dx = remainder, ax = quotient
 
     push ax
-    push ax ; ax is pushed twice, because the called subroutine below, when it returns,
-            ; discards (with 'ret 2') what was just pushed onto the stack before it was called
-            ; (actually, 'ret 2' increases the stack pointer by 2)
-    call hex2ascii  ; 'call' first pushes the current address onto the stack, then does
-                    ; an unconditional jump to the specified label (i.e. the name of the subroutine)
+    push ax ; ax is pushed twice, because the called subroutine below,
+            ; when it returns, discards (with 'ret 2') what was just pushed
+            ; onto the stack before it was called (actually, 'ret 2' increases
+            ; the stack pointer by 2)
+    call hex2ascii  ; 'call' first pushes the current address onto the stack,
+                    ; then does an unconditional jump to the specified label
+                    ; (i.e. the name of the subroutine)
     pop ax
 
     ; ---- trim leading zeros (trim e.g. 0009 to 9, 0125 to 125 etc) ----
@@ -125,8 +130,8 @@ printHex2Ascii MACRO hex, digits_num
     xchg dx, ax
 
     ; check condition:
-    cmp cx, 1 ; when cx is 1, there is no meaning to perform the divisions anymore,
-              ; thus the macro is considered finished
+    cmp cx, 1 ; when cx is 1, there is no meaning to perform the divisions
+              ; anymore, thus the macro is considered finished
     je end_macro
 
     ; divide cx by 10:
@@ -161,7 +166,8 @@ stack ends
 
 data segment use16
   array dw 9, 198, -108, 6, -125, 40, -9, 202, 1
-  elements_num equ (($-array)/2)  ; $-array generates the length of the array
+  elements_num equ (($-array)/2)  ; $-array generates the size of
+                                  ; the array in bytes
   ; (($-array)/2) calculates the number of elements:
   ; the length of the array is divided by 2, because each
   ; element takes 2 bytes in memory, and thus that calculation
@@ -227,8 +233,8 @@ main proc far
             ; 'shl di, 1', found above (below 'next_elem')
   inc di
   mov al, elements_num
-  and ax, 0fh ; mask: keeps only the low byte of ax (i.e. only al), and
-              ; sets the high byte (i.e. ah) to 0
+  and ax, 00ffh ; mask: keeps only the low byte of ax (i.e. only al), and
+                ; sets the high byte (i.e. ah) to 0
   cmp di, ax    ; checks if all elements have been checked
                 ; (actually, the maximum value di can have is elements_num-1),              
   je next_pass  ; if so, jump to 'next_pass'
@@ -322,7 +328,8 @@ HEX2ASCII PROC NEAR
   push bp
   mov bp, sp
   mov ax, [bp+4]  ; take input variable
-                  ; it takes the ax value that was pushed last before this subroutine was called
+                  ; it takes the ax value that was pushed
+                  ; last before this subroutine was called
   push cx
   mov cx, 4
   mov bp, cx
@@ -342,10 +349,13 @@ HEX2ASCII PROC NEAR
   jnz H2A1
   pop cx
   pop bp
-  ret 2 ; ... may optionally specify an immediate operand, by adding this constant to the stack pointer,
-        ; they effectively remove any arguments that the calling program pushed on the stack before
+  ret 2 ; ... may optionally specify an immediate operand,
+        ; by adding this constant to the stack pointer,
+        ; they effectively remove any arguments that the
+        ; calling program pushed on the stack before
         ; the execution of the call instruction.
-        ; Effectively, in this case, it removes the data that was pushed onto the stack (i.e. 'push ax'),
+        ; Effectively, in this case, it removes the data
+        ; that was pushed onto the stack (i.e. 'push ax'),
         ; before this subroutine was called.
 HEX2ASCII ENDP
 
