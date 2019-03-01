@@ -6,8 +6,9 @@ print_text_on_cursor MACRO text ; text must end with '$'
   push ax
   push dx
 
-  mov ah, 09h ; display a text string (must end with an ASCII $ (24H))
-  mov dx, offset text ; offset of text from segment (where data is located), dx's value is the address of the text string
+  mov ah, 09h         ; display a text string (must end with an ASCII $ (24H))
+  mov dx, offset text ; offset of text from segment (where data is located),
+                      ; dx's value is the address of the text string
   int 21h
 
   pop dx
@@ -56,21 +57,25 @@ printHex2Ascii MACRO hex, digits_num
   mov leading_zero, 1 ; If the first digit is a zero, it's considered as a
                       ; leading zero.
   print_loop:
-    mov dx, 0 ; We don't care about the quotient (which after the xchg is now on dx),
-              ; and also it prevents problems with the division (div cx),
-              ; because otherwise if dx is not 0, the dividend (dx-ax) would become
-              ; a quite large and unwanted/wrong number, and the program will crash
-              ; (especially when the divisor (cx) equals 1, the quotient (ax) would be
-              ; equal to the dividend (dx-ax) and as it's obvious ax (16 bit) cannot
-              ; store dx-ax (32 bit)).
+    mov dx, 0
+    ; We don't care about the quotient (which after the xchg is now on dx),
+    ; and also it prevents problems with the division (div cx),
+    ; because otherwise if dx is not 0, the dividend (dx-ax) would become
+    ; a quite large and unwanted/wrong number, and the program will crash
+    ; (especially when the divisor (cx) equals 1, the quotient (ax) would be
+    ; equal to the dividend (dx-ax) and as it's obvious ax (16 bit) cannot
+    ; store dx-ax (32 bit)).
+
     div cx ; dx-ax / cx => dx = remainder, ax = quotient
 
     push ax
-    push ax ; ax is pushed twice, because the called subroutine below, when it returns,
-            ; discards (with 'ret 2') what was just pushed onto the stack before it was called
-            ; (actually, 'ret 2' increases the stack pointer by 2)
-    call hex2ascii  ; 'call' first pushes the current address onto the stack, then does
-                    ; an unconditional jump to the specified label (i.e. the name of the subroutine)
+    push ax ; ax is pushed twice, because the called subroutine below,
+            ; when it returns, discards (with 'ret 2') what was just pushed
+            ; onto the stack before it was called (actually, 'ret 2' increases
+            ; the stack pointer by 2)
+    call hex2ascii  ; 'call' first pushes the current address onto the stack,
+                    ; then does an unconditional jump to the specified label
+                    ; (i.e. the name of the subroutine)
     pop ax
 
     ; ---- convert leading zeros (trim e.g. 0009 to    9, 0125 to  125 etc) ----
@@ -116,8 +121,8 @@ printHex2Ascii MACRO hex, digits_num
     xchg dx, ax
 
     ; check condition:
-    cmp cx, 1 ; when cx is 1, there is no meaning to perform the divisions anymore,
-              ; thus the macro is considered finished
+    cmp cx, 1 ; when cx is 1, there is no meaning to perform the divisions
+              ; anymore, thus the macro is considered finished
     je end_macro
 
     ; divide cx by 10:
@@ -164,8 +169,9 @@ stack ends
 
 data segment use16
   buffer db 4 dup(0)
-  db dollar ; a byte declared without a label, containing the value of dollar, its location is buffer + 4
-            ; same thing with the other 'db dollar' declarations
+  db dollar ; a byte declared without a label, containing the value of dollar,
+            ; its location is buffer + 4.
+            ; Same thing with the other 'db dollar' declarations.
   
   array dw array_size dup(0)
   db eom
@@ -181,20 +187,20 @@ data segment use16
   line_24 dw 3680d  ; one line above from the last line on screen
   line_25 dw 3840d  ; last line on screen
 
-  msg db 'Doste ta stoixeia tou ', array_rows+48, '*', array_cols+48, ' pinaka:'
-                                                ; 48 is added to the values to get their
-                                                ; ASCII representation.
+  msg db 'Enter the elements of the ', array_rows+48, '*', array_cols+48, ' array:'
+                                        ; 48 is added to the values to get their
+                                        ; ASCII representation.
   db eom
-  msg0 db '(0) Gia exodo apo to programma.'
+  msg0 db '(0) Exit.'
   db eom
-  msg1 db '(1) Gia na dosete kainourgia stoixeia ston pinaka.'
+  msg1 db '(1) Enter new elements.'
   db eom
-  msg2 db '(2) Gia thn emfanish tou athroismatos twn stoixeiwn.'
+  msg2 db '(2) Print elements' sum.'
   db eom
 
-  msg_sum db 'Athroisma twn arithmwn:'
+  msg_sum db 'Element's sum:'
   db eom
-  msg_gotoMenu db 'Press any key, gia epistrofh sto menu epilogwn...'
+  msg_gotoMenu db 'Press any key, to return...'
   db eom
 
   sign dw dollar
@@ -214,25 +220,32 @@ main proc far
   mov ax, data
   mov ds, ax
 
-  ; set ES register to memory location (equals to vidmem = 0b800h) of extra segment
+  ; set ES register to memory location
+  ; (equals to vidmem = 0b800h) of extra segment
   mov ax, vidmem
   mov es, ax
 
   read_nums:
-  mov di, 0 ; counter of elements/numbers (with step 2); mainly, the destination index of the array where numbers are stored
+  mov di, 0 ; counter of elements/numbers (with step 2); mainly,
+            ; the destination index of the array where numbers are stored
 
   read_nums_loop:
   call cls
-  print_text_at_pos msg, line_24 ; 'Doste ta stoixeia tou X*X pinaka:'
+  print_text_at_pos msg, line_24 ; 'Enter elements of X*X array:'
 
-  mov cx, 10  ; multiplication factor; later, by multiplying ax each time, the whole number
-              ; (temporarily as the value of ax) is factored from units to thousands
-  mov bx, 0   ; actual container of whole number; via addition with ax it forms the whole number (in hex format)
+  mov cx, 10  ; multiplication factor; later, by multiplying ax each time,
+              ; the whole number (temporarily as the value of ax) is factored
+              ; from units to thousands.
+  mov bx, 0   ; actual container of whole number; via addition with ax
+              ; it forms the whole number (in hex format)
 
   read_num:
-    mov ah, 1 ; read the keyboard, stores string input (a single char) to al, echoes/displays character on screen
-    int 21h   ; (it doesn't wait for pressing ENTER, thus when you press a key, it immediately takes that as input and continues)
-    mov ah, 0 ; ah is set to 0 (from 1), because later ax is used to construct (via addition with bx) the typed number
+    mov ah, 1 ; read the keyboard, stores string input (a single char) to al,
+              ; echoes/displays character on screen
+    int 21h   ; (it doesn't wait for pressing ENTER, thus when you press a key,
+              ; it immediately takes that as input and continues)
+    mov ah, 0 ; ah is set to 0 (from 1), because later ax is used to construct
+              ; (via addition with bx) the typed number
 
     ; checks to see if typed number is out of range of accepted numbers (0-9),
     ; if so then jump
@@ -243,8 +256,8 @@ main proc far
     ; if ENTER is pressed, which is equal to 0Dh, it will jump, too;
     ; these two jumps above are the only ways to break from this loop
 
-    sub al, '0' ; convert ASCII number (of type string) to hex format (e.g.: ('1'=31h) - ('0'=30h) = 1h)
-
+    sub al, '0' ; convert ASCII number (of type string) to hex format
+                ; (e.g.: ('1'=31h) - ('0'=30h) = 1h)
     push ax
     mov ax, bx  ; ax copies bx, to
     mul cx      ; multiply ax with cx, and store result to ax
@@ -252,16 +265,20 @@ main proc far
                 ; (here, ax is used as a temp register,
     pop ax      ; while its actual value is retained in the stack)
 
-    add bx, ax  ; the previously typed numbers, contained by bx, and constructed so they form a whole number,
-                ; where each typed number takes the right place in the whole via the above multiplication (mul cx),
-                ; are added with ax, which currently contains the last typed number (as the current units)
+    add bx, ax  ; the previously typed numbers, contained by bx, and constructed
+                ; so they form a whole number, where each typed number takes the
+                ; right place in the whole via the above multiplication (mul cx),
+                ; are added with ax, which currently contains the last typed
+                ; number (as the current units)
   jmp read_num
 
   store_read_num:
   mov array[di], bx
-  add di, 2 ; Each data location is 8 bit (i.e. 1 byte each), ax is 16 bit (2 bytes),
-            ; thus it takes 2 locations to be saved, and that's why di is increased by 2.
-  cmp di, array_size  ; And that's why it checks for elements_num*2=array_size (here it has nothing to do about color).
+  add di, 2           ; Each data location is 8 bit (i.e. 1 byte each),
+                      ; ax is 16 bit (2 bytes), thus it takes 2 locations
+                      ; to be saved, and that's why di is increased by 2.
+  cmp di, array_size  ; And that's why it checks for elements_num*2=array_size
+                      ; (here it has nothing to do about color).
   je disp_nums
   jmp read_nums_loop
 
@@ -272,19 +289,20 @@ main proc far
   mov si, 0 ; source index of which element/number to retrieve from array
 
   disp_nums_loop:
-    printHex2Ascii array[si], 4  ; prints a whole number (of 4 digits) in ascii format
-
+    printHex2Ascii array[si], 4 ; prints a whole number (of 4 digits)
+                                ; in ascii format
     print_text_on_cursor space
 
-    add si, 2 ; increase si by 2 to get the next whole number in the next iteration
-
-    inc bx      ; a digit has been displayed, so bx is increased by 1
-    cmp bx, array_rows  ; is the limit of how many whole numbers (of 4 digits) should be displayed in the current row,
-                        ; once bx reach this, the code continues below
+    add si, 2           ; Increase si by 2 to get the next whole number
+                        ; in the next iteration.
+    inc bx              ; A digit has been displayed, so bx is increased by 1
+    cmp bx, array_rows  ; is the limit of how many whole numbers (of 4 digits)
+                        ; should be displayed in the current row,
+                        ; once bx reach this, the code continues below.
   jne disp_nums_loop
-    mov bx, 0   ; reset bx, for the next iteration
+    mov bx, 0           ; reset bx, for the next iteration
     print_text_on_cursor new_line
-    cmp si, array_size ; same situation with 'cmp bx, array_rows' above
+    cmp si, array_size  ; same situation with 'cmp bx, array_rows' above
   jne disp_nums_loop
 
   ; MENU
@@ -316,7 +334,8 @@ main proc far
     push cx
 
     ; calculation of the sum
-    mov ax, 0 ; register to contain the sum (it will be overflowed if the numbers are big)
+    mov ax, 0 ; register to contain the sum
+              ; (it will be overflowed if the numbers are big)
     mov di, 0 ; index to array's element, starting from the first (position 0)
     mov cx, elements_num ; number of iterations, equal to element's number
     sum_loop:
@@ -381,7 +400,8 @@ HEX2ASCII PROC NEAR
   push bp
   mov bp, sp
   mov ax, [bp+4]  ; take input variable
-                  ; it takes the ax value that was pushed last before this subroutine was called
+                  ; it takes the ax value that was pushed
+                  ; last before this subroutine was called
   push cx
   mov cx, 4
   mov bp, cx
@@ -401,10 +421,13 @@ HEX2ASCII PROC NEAR
   jnz H2A1
   pop cx
   pop bp
-  ret 2 ; ... may optionally specify an immediate operand, by adding this constant to the stack pointer,
-        ; they effectively remove any arguments that the calling program pushed on the stack before
+  ret 2 ; ... may optionally specify an immediate operand,
+        ; by adding this constant to the stack pointer,
+        ; they effectively remove any arguments that the
+        ; calling program pushed on the stack before
         ; the execution of the call instruction.
-        ; Effectively, in this case, it removes the data that was pushed onto the stack (i.e. 'push ax'),
+        ; Effectively, in this case, it removes the data
+        ; that was pushed onto the stack (i.e. 'push ax'),
         ; before this subroutine was called.
 HEX2ASCII ENDP
 
